@@ -1,15 +1,15 @@
 {
-  "name": "baileys",
+  "name": "planetxbaileys",
   "type": "module",
   "version": "7.0.0-rc.9",
-  "description": "A WebSockets library for interacting with WhatsApp Web",
+  "description": "Telegram @PlanetOffc",
   "keywords": [
     "whatsapp",
     "automation"
   ],
-  "homepage": "https://github.com/WhiskeySockets/Baileys/",
+  "homepage": "https://github.com/adityaoffc0-droid/planetxbail",
   "repository": {
-    "url": "git@github.com:WhiskeySockets/Baileys.git"
+    "url": "git@github.com:adityaoffc0-droid/planetxbail.git"
   },
   "license": "MIT",
   "author": "Rajeh Taher",
