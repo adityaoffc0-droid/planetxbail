@@ -72,22 +72,25 @@ const startSock = async() => {
 		async(events) => {
 			// something about the connection changed
 			// maybe it closed, or we received all offline message or connection opened
-			if(events['connection.update']) {
+						if(events['connection.update']) {
 				const update = events['connection.update']
 				const { connection, lastDisconnect, qr } = update
+
 				if(connection === 'close') {
 					// reconnect if not logged out
 					if((lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut) {
 						startSock()
 					} else {
-						logger.fatal('Connection closed. You are logged out.')
+						logger.fatal('Koneksi terputus, kamu telah keluar')
 					}
+				} else if(connection === 'open') {
+					console.log('Welcome To PlanetBaileys, Telegram @PlanetOffc')
 				}
 
 				if (qr) {
 					// Pairing code for Web clients
 					if (usePairingCode && !sock.authState.creds.registered) {
-						const phoneNumber = await question('Please enter your phone number:\n')
+						const phoneNumber = await question('Berikan Nomor Wa Lu :\n')
 						const code = await sock.requestPairingCode(phoneNumber)
 						console.log(`Pairing code: ${code}`)
 					}
