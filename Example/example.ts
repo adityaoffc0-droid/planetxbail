@@ -1,13 +1,11 @@
 import { Boom } from '@hapi/boom'
 import NodeCache from '@cacheable/node-cache'
-import readline from 'readline'
 import makeWASocket, {
   CacheStore,
   DEFAULT_CONNECTION_CONFIG,
   DisconnectReason,
   fetchLatestBaileysVersion,
   generateMessageIDV2,
-  getAggregateVotesInPollMessage,
   isJidNewsletter,
   makeCacheableSignalKeyStore,
   proto,
@@ -19,9 +17,7 @@ import P from 'pino'
 
 /* =======================
    GLOBAL START TEXT
-   (WA + TELEGRAM)
 ======================= */
-console.clear()
 console.log(`
 ====================================
 █▀█ █░ ▄▀█ █▄░█ █▀▀ ▀█▀
@@ -37,21 +33,16 @@ sᴇʟᴀᴍᴀᴛ ᴍᴇɴɢɢᴜɴᴀᴋᴀɴ ʙᴀɪʟᴇʏsɴʏᴀ
 `)
 
 /* =======================
-   LOGGER
+   LOGGER (Optimized for Speed)
 ======================= */
 const logger = P({
-  level: "trace",
+  level: "error", // Mengurangi overhead I/O dengan hanya mencatat error
   transport: {
     targets: [
       {
         target: "pino-pretty",
         options: { colorize: true },
-        level: "trace",
-      },
-      {
-        target: "pino/file",
-        options: { destination: './wa-logs.txt' },
-        level: "trace",
+        level: "error",
       },
     ],
   },
@@ -60,17 +51,18 @@ const logger = P({
 const doReplies = process.argv.includes('--do-reply')
 const usePairingCode = process.argv.includes('--use-pairing-code')
 
-const msgRetryCounterCache = new NodeCache() as CacheStore
-
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
-const question = (text: string) => new Promise<string>(resolve => rl.question(text, resolve))
+// Cache dengan performa tinggi (tanpa cloning untuk akses memori instan)
+const msgRetryCounterCache = new NodeCache({ 
+  stdTTL: 0, 
+  checkperiod: 0, 
+  useClones: false 
+}) as CacheStore
 
 /* =======================
    START SOCKET
 ======================= */
 const startSock = async () => {
   const { state, saveCreds } = await useMultiFileAuthState('baileys_auth_info')
-
   const { version } = await fetchLatestBaileysVersion()
 
   const sock = makeWASocket({
@@ -82,76 +74,75 @@ const startSock = async () => {
       keys: makeCacheableSignalKeyStore(state.keys, logger),
     },
     msgRetryCounterCache,
-    generateHighQualityLinkPreview: true,
+    generateHighQualityLinkPreview: false, // Mempercepat pengiriman pesan tanpa preview berat
+    syncFullHistory: false, // Mencegah bot lambat karena sinkronisasi chat lama
+    markOnlineOnConnect: true,
+    defaultQueryTimeoutMs: undefined,
     getMessage
   })
 
   sock.ev.process(async (events) => {
 
-    /* ===== CONNECTION ===== */
+    /* ===== CONNECTION UPDATE ===== */
     if (events['connection.update']) {
       const { connection, lastDisconnect, qr } = events['connection.update']
 
       if (connection === 'close') {
-        if ((lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut) {
+        const code = (lastDisconnect?.error as Boom)?.output?.statusCode
+        if (code !== DisconnectReason.loggedOut) {
+          console.log('🔄 Reconnecting for stability...')
           startSock()
         } else {
-          logger.fatal('Logged out.')
+          console.log('❌ Logged out.')
         }
       }
 
       if (connection === 'open') {
-        console.log(`
-█▀█ █░ ▄▀█ █▄░█ █▀▀ ▀█▀
-█▀▀ █▄ █▀█ █░▀█ ██▄ ░█░
-Welcome To Baileys Planet
-Telegram : @planetoffc
-        `)
+        console.log('✅ Connected to WhatsApp!')
       }
 
-      /* ===== PAIRING ===== */
+      /* ===== PAIRING (Optimized) ===== */
       if (qr && usePairingCode && !sock.authState.creds.registered) {
-        console.log(`
+        const phoneNumber = process.env.WA_NUMBER || '628xxxxxxxxxx'
+        // Delay singkat untuk memastikan socket siap meminta code
+        setTimeout(async () => {
+            const realCode = await sock.requestPairingCode(phoneNumber)
+            console.log(`
 ====================================
-𝐏𝐋𝐀𝐍𝐄𝐓 - 𝐎𝐅𝐅𝐈𝐂𝐈𝐀𝐋 - 𝐁𝐀𝐈𝐋𝐄𝐘𝐒 - 𝐕𝐈𝐏
+📱 PAIRING CODE : ${realCode}
 ====================================
-        `)
-
-        const phoneNumber = await question('📱 Masukkan Nomor WhatsApp:\n')
-        const realCode = await sock.requestPairingCode(phoneNumber)
-
-        console.log(`
-====================================
-📲 Code WhatsApp   : ${realCode}
-====================================
-        `)
+            `)
+        }, 2000)
       }
     }
 
-    /* ===== CREDS ===== */
+    /* ===== CREDS UPDATE ===== */
     if (events['creds.update']) {
       await saveCreds()
     }
 
-    /* ===== MESSAGE ===== */
+    /* ===== MESSAGE HANDLING (Turbo Mode) ===== */
     if (events['messages.upsert']) {
-      const upsert = events['messages.upsert']
+      const { messages, type } = events['messages.upsert']
 
-      if (upsert.type === 'notify') {
-        for (const msg of upsert.messages) {
-          const text =
-            msg.message?.conversation ||
-            msg.message?.extendedTextMessage?.text
-
-          if (!text) continue
-
+      if (type === 'notify') {
+        // Gunakan for-of dengan eksekusi async non-blocking agar ribuan pesan tidak antre
+        for (const msg of messages) {
           if (!msg.key.fromMe && doReplies && !isJidNewsletter(msg.key.remoteJid!)) {
-            const id = generateMessageIDV2(sock.user?.id)
-            await sock.sendMessage(
-              msg.key.remoteJid!,
-              { text: `pong ${msg.key.id}` },
-              { messageId: id }
-            )
+            
+            // Eksekusi tanpa await di sini agar loop lanjut ke pesan berikutnya segera
+            (async () => {
+              const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text
+              if (!text) return
+              
+              const id = generateMessageIDV2(sock.user?.id)
+              await sock.sendMessage(
+                msg.key.remoteJid!, 
+                { text: `pong ${msg.key.id}` }, 
+                { messageId: id }
+              )
+            })().catch(err => logger.error(err))
+
           }
         }
       }
@@ -161,9 +152,11 @@ Telegram : @planetoffc
 
   return sock
 
+  /* ===== GET MESSAGE (Fast Proto) ===== */
   async function getMessage(_: WAMessageKey): Promise<WAMessageContent | undefined> {
-    return proto.Message.create({ conversation: 'PLANET-BOT' })
+    return proto.Message.fromObject({ conversation: 'PLANET-BOT' })
   }
 }
 
-startSock()
+// Start bot
+startSock().catch(err => console.error('❌ Socket failed', err))
