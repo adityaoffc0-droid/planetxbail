@@ -15,28 +15,38 @@ import makeWASocket, {
 } from '../src'
 import P from 'pino'
 
-/* =======================
-   GLOBAL START TEXT
-======================= */
-console.log(`
-====================================
-█▀█ █░ ▄▀█ █▄░█ █▀▀ ▀█▀
-█▀▀ █▄ █▀█ █░▀█ ██▄ ░█░
-ᗯᗴᒪᑕOᗰᗴ TO ᗷᗩIᒪᗴYՏ planet
+/* =======================================================
+   DISPLAY BANNER (Berlaku untuk semua jenis panel)
+======================================================= */
+const displayBanner = () => {
+  console.clear() // Membersihkan sampah log sebelumnya
+  console.log(`
+\x1b[35m   //==============//
+  //   \x1b[37mPLANETBAIL\x1b[35m  //
+ //==============//\x1b[0m
 
-ᴛᴇʟᴇɢʀᴀᴍ : @planetoffc
-ᴄʜᴀɴᴇᴇʟ : @zisneed
-ᴠᴇʀsɪᴏɴ ʙᴀɪʟᴇʏs : 2.0
+\x1b[36m█▀█ █░ ▄▀█ █▄░█ █▀▀ ▀█▀
+█▀▀ █▄ █▀█ █░▀█ ██▄ ░█░\x1b[0m
 
-sᴇʟᴀᴍᴀᴛ ᴍᴇɴɢɢᴜɴᴀᴋᴀɴ ʙᴀɪʟᴇʏsɴʏᴀ
-====================================
+\x1b[33m𝗪𝗘𝗟𝗖𝗢𝗠𝗘 𝗧𝗢 𝗣𝗟𝗔𝗡𝗘𝗧 𝗕𝗔𝗜𝗟𝗘𝗬𝗦! \x1b[0m
+──────────────────────────────────────
+\x1b[34m𝄞 Baileys By  :\x1b[0m PlanetOffc
+\x1b[34mTelegram    :\x1b[0m @planetoffc
+\x1b[34mChannel     :\x1b[0m @zisneed
+\x1b[34mVersion     :\x1b[0m 2.0 
+──────────────────────────────────────
+\x1b[32mSelamat menggunakan baileys planet :=)\x1b[0m
 `)
+}
+
+// Panggil Banner di awal
+displayBanner()
 
 /* =======================
-   LOGGER (Optimized for Speed)
+   LOGGER (Optimized)
 ======================= */
 const logger = P({
-  level: "error", // Mengurangi overhead I/O dengan hanya mencatat error
+  level: "error", 
   transport: {
     targets: [
       {
@@ -51,7 +61,6 @@ const logger = P({
 const doReplies = process.argv.includes('--do-reply')
 const usePairingCode = process.argv.includes('--use-pairing-code')
 
-// Cache dengan performa tinggi (tanpa cloning untuk akses memori instan)
 const msgRetryCounterCache = new NodeCache({ 
   stdTTL: 0, 
   checkperiod: 0, 
@@ -74,8 +83,8 @@ const startSock = async () => {
       keys: makeCacheableSignalKeyStore(state.keys, logger),
     },
     msgRetryCounterCache,
-    generateHighQualityLinkPreview: false, // Mempercepat pengiriman pesan tanpa preview berat
-    syncFullHistory: false, // Mencegah bot lambat karena sinkronisasi chat lama
+    generateHighQualityLinkPreview: false,
+    syncFullHistory: false,
     markOnlineOnConnect: true,
     defaultQueryTimeoutMs: undefined,
     getMessage
@@ -90,33 +99,30 @@ const startSock = async () => {
       if (connection === 'close') {
         const code = (lastDisconnect?.error as Boom)?.output?.statusCode
         if (code !== DisconnectReason.loggedOut) {
-          console.log('🔄 Reconnecting for stability...')
+          console.log('\x1b[33m🔄 Reconnecting for stability...\x1b[0m')
           startSock()
         } else {
-          console.log('❌ Logged out.')
+          console.log('\x1b[31m❌ Logged out.\x1b[0m')
         }
       }
 
       if (connection === 'open') {
-        console.log('✅ Connected to WhatsApp!')
+        console.log('\x1b[32m✅ Connected successfully to WhatsApp!\x1b[0m')
       }
 
-      /* ===== PAIRING (Optimized) ===== */
+      /* ===== PAIRING CODE (Optimized Visual) ===== */
       if (qr && usePairingCode && !sock.authState.creds.registered) {
         const phoneNumber = process.env.WA_NUMBER || '628xxxxxxxxxx'
-        // Delay singkat untuk memastikan socket siap meminta code
         setTimeout(async () => {
             const realCode = await sock.requestPairingCode(phoneNumber)
             console.log(`
-====================================
-📱 PAIRING CODE : ${realCode}
-====================================
+\x1b[44m\x1b[37m  PAIRING CODE ANDA  \x1b[0m
+\x1b[1m\x1b[33m> ${realCode} <\x1b[0m
             `)
-        }, 2000)
+        }, 3000)
       }
     }
 
-    /* ===== CREDS UPDATE ===== */
     if (events['creds.update']) {
       await saveCreds()
     }
@@ -126,11 +132,8 @@ const startSock = async () => {
       const { messages, type } = events['messages.upsert']
 
       if (type === 'notify') {
-        // Gunakan for-of dengan eksekusi async non-blocking agar ribuan pesan tidak antre
         for (const msg of messages) {
           if (!msg.key.fromMe && doReplies && !isJidNewsletter(msg.key.remoteJid!)) {
-            
-            // Eksekusi tanpa await di sini agar loop lanjut ke pesan berikutnya segera
             (async () => {
               const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text
               if (!text) return
@@ -142,21 +145,17 @@ const startSock = async () => {
                 { messageId: id }
               )
             })().catch(err => logger.error(err))
-
           }
         }
       }
     }
-
   })
 
   return sock
 
-  /* ===== GET MESSAGE (Fast Proto) ===== */
   async function getMessage(_: WAMessageKey): Promise<WAMessageContent | undefined> {
     return proto.Message.fromObject({ conversation: 'PLANET-BOT' })
   }
 }
 
-// Start bot
-startSock().catch(err => console.error('❌ Socket failed', err))
+startSock().catch(err => console.error('\x1b[31m❌ Socket failed\x1b[0m', err))
