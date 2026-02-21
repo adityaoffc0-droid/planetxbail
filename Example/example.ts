@@ -12,14 +12,12 @@ import makeWASocket, {
   useMultiFileAuthState,
   WAMessageContent,
   WAMessageKey
-} from '../src'
+} from '@whiskeysockets/baileys' // Pastikan library sudah terinstall
 import P from 'pino'
 
-/* =======================================================
-   DISPLAY BANNER (Berlaku untuk semua jenis panel)
-======================================================= */
+
 const displayBanner = () => {
-  console.clear() // Membersihkan sampah log sebelumnya
+  process.stdout.write('\x1Bc'); 
   console.log(`
 \x1b[35m   //==============//
   //   \x1b[37mPLANETBAIL\x1b[35m  //
@@ -31,31 +29,17 @@ const displayBanner = () => {
 \x1b[33m𝗪𝗘𝗟𝗖𝗢𝗠𝗘 𝗧𝗢 𝗣𝗟𝗔𝗡𝗘𝗧 𝗕𝗔𝗜𝗟𝗘𝗬𝗦! \x1b[0m
 ──────────────────────────────────────
 \x1b[34m𝄞 Baileys By  :\x1b[0m PlanetOffc
-\x1b[34mTelegram    :\x1b[0m @planetoffc
-\x1b[34mChannel     :\x1b[0m @zisneed
-\x1b[34mVersion     :\x1b[0m 2.0 
+\x1b[34mTelegram      :\x1b[0m @planetoffc
+\x1b[34mChannel       :\x1b[0m @zisneed
+\x1b[34mVersion       :\x1b[0m 109.8.0.1
 ──────────────────────────────────────
 \x1b[32mSelamat menggunakan baileys planet :=)\x1b[0m
+\x1b[90m[ 😋 ]\x1b[0m
 `)
 }
 
-// Panggil Banner di awal
-displayBanner()
-
-/* =======================
-   LOGGER (Optimized)
-======================= */
 const logger = P({
-  level: "error", 
-  transport: {
-    targets: [
-      {
-        target: "pino-pretty",
-        options: { colorize: true },
-        level: "error",
-      },
-    ],
-  },
+  level: "silent", 
 })
 
 const doReplies = process.argv.includes('--do-reply')
@@ -67,12 +51,11 @@ const msgRetryCounterCache = new NodeCache({
   useClones: false 
 }) as CacheStore
 
-/* =======================
-   START SOCKET
-======================= */
 const startSock = async () => {
   const { state, saveCreds } = await useMultiFileAuthState('baileys_auth_info')
   const { version } = await fetchLatestBaileysVersion()
+
+  displayBanner()
 
   const sock = makeWASocket({
     version,
@@ -92,33 +75,28 @@ const startSock = async () => {
 
   sock.ev.process(async (events) => {
 
-    /* ===== CONNECTION UPDATE ===== */
     if (events['connection.update']) {
       const { connection, lastDisconnect, qr } = events['connection.update']
 
       if (connection === 'close') {
         const code = (lastDisconnect?.error as Boom)?.output?.statusCode
         if (code !== DisconnectReason.loggedOut) {
-          console.log('\x1b[33m🔄 Reconnecting for stability...\x1b[0m')
+          console.log('\x1b[33m🔄 Reconnecting...\x1b[0m')
           startSock()
         } else {
-          console.log('\x1b[31m❌ Logged out.\x1b[0m')
+          console.log('\x1b[31m❌ Session Logged Out.\x1b[0m')
         }
       }
 
       if (connection === 'open') {
-        console.log('\x1b[32m✅ Connected successfully to WhatsApp!\x1b[0m')
+        console.log('\x1b[32m✅ SUCCESS: Connected to WhatsApp!\x1b[0m')
       }
 
-      /* ===== PAIRING CODE (Optimized Visual) ===== */
       if (qr && usePairingCode && !sock.authState.creds.registered) {
         const phoneNumber = process.env.WA_NUMBER || '628xxxxxxxxxx'
         setTimeout(async () => {
             const realCode = await sock.requestPairingCode(phoneNumber)
-            console.log(`
-\x1b[44m\x1b[37m  PAIRING CODE ANDA  \x1b[0m
-\x1b[1m\x1b[33m> ${realCode} <\x1b[0m
-            `)
+            console.log(`\n\x1b[44m\x1b[37m PAIRING CODE \x1b[0m \x1b[1m\x1b[33m ${realCode} \x1b[0m\n`)
         }, 3000)
       }
     }
@@ -127,24 +105,17 @@ const startSock = async () => {
       await saveCreds()
     }
 
-    /* ===== MESSAGE HANDLING (Turbo Mode) ===== */
     if (events['messages.upsert']) {
       const { messages, type } = events['messages.upsert']
-
       if (type === 'notify') {
         for (const msg of messages) {
           if (!msg.key.fromMe && doReplies && !isJidNewsletter(msg.key.remoteJid!)) {
             (async () => {
               const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text
               if (!text) return
-              
               const id = generateMessageIDV2(sock.user?.id)
-              await sock.sendMessage(
-                msg.key.remoteJid!, 
-                { text: `pong ${msg.key.id}` }, 
-                { messageId: id }
-              )
-            })().catch(err => logger.error(err))
+              await sock.sendMessage(msg.key.remoteJid!, { text: `pong` }, { messageId: id })
+            })().catch(err => {})
           }
         }
       }
